@@ -63,6 +63,12 @@ cd guides/tiered-prefix-cache/storage
 
 Deploy the Gateway and HTTPRoute using the [gateway recipe](../../recipes/gateway/README.md).
 
+For example:
+
+```
+kubectl apply -k guides/recipes/gateway/istio -n ${NAMESPACE}
+```
+
 ### 2. Prepare a PVC
 
 #### 2.1 Provision the Storage Backend
@@ -161,6 +167,23 @@ kubectl apply -k ./manifests/vllm/lmcache-connector -n ${NAMESPACE}
 
 Deploy the `InferencePool` using the [InferencePool recipe](../../recipes/scheduler/README.md).
 
+For example:
+
+```
+helm upgrade llm-d-infpool \
+  oci://registry.k8s.io/gateway-api-inference-extension/charts/inferencepool \
+  -f guides/recipes/scheduler/base.values.yaml \
+  -f guides/recipes/scheduler/features/monitoring.values.yaml \
+  --set inferencePool.modelServers.matchLabels."llm-d\.ai/inferenceServing"="true" \
+  --set inferencePool.targetPorts[0].number=8000 \
+  --set inferencePool.modelServerType=vllm \
+  --set experimentalHttpRoute.enabled=true \
+  --set experimentalHttpRoute.inferenceGatewayName=llm-d-inference-gateway \
+  --set provider.name=<your gateway type: istio/gke/none> \
+  -n ${NAMESPACE} \
+  --version v1.4.0
+```
+
 **NOTE:** This guide uses an InferencePool recipe with HBM cache only. Storage offloading is typically used with CPU offloading, which is not covered, see <https://github.com/llm-d/llm-d/issues/682> for a follow up.
 
 <!-- TAB:LMCache Connector -->
@@ -236,6 +259,16 @@ NAME                                  READY   STATUS    RESTARTS   AGE
 llm-d-infpool-epp-xxxxxxxx-xxxxx     1/1     Running   0          16m
 llm-d-model-server-xxxxxxxx-xxxxx   1/1     Running   0          11m
 llm-d-model-server-xxxxxxxx-xxxxx   1/1     Running   0          11m
+```
+
+### Ensure vllm is up and running
+
+```
+kubectl port-forward -n ${NAMESPACE} svc/<your gateway service - e.g. llm-d-inference-gateway-istio> 8000:80 &
+curl -s http://localhost:8000/v1/models
+curl -s http://localhost:8000/v1/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"Qwen/Qwen3-32B","prompt":"The capital of France is","max_tokens":15,"temperature":0}'
 ```
 
 ### Verify KV cache is offloaded to storage
