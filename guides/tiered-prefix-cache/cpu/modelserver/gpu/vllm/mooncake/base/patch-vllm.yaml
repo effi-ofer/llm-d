@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: decode
+spec:
+  replicas: 1
+  template:
+    spec:
+      securityContext:
+        runAsUser: 0
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: NotIn
+                    values:
+                      - pokprod-b93r38s3
+      containers:
+        - name: modelserver
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              export PATH="/root/.local/bin:$PATH"; \
+              if ! command -v git > /dev/null 2>&1; then
+                apt-get update -qq && apt-get install -y -qq git
+              fi; \
+              rm -rf /workspace/vllm; \
+              cd /workspace; \
+              git clone https://github.com/vllm-project/vllm.git; \
+              cd vllm; \
+              git checkout ebeb09d822; \
+              uv venv .venv --python 3.12; \
+              source .venv/bin/activate; \
+              VLLM_USE_PRECOMPILED=1 \
+              VLLM_PRECOMPILED_WHEEL_COMMIT=bc150f50299199599673614f80d12a196f377655 \
+              uv pip install -e . --torch-backend=auto; \
+              uv pip install mooncake-transfer-engine; \
+              uv pip install nvidia-cuda-runtime-cu12; \
+              CUDA12_LIB=$(.venv/bin/python -c "import nvidia.cuda_runtime; print(list(nvidia.cuda_runtime.__path__)[0] + '/lib')"); \
+              export LD_LIBRARY_PATH="${CUDA12_LIB}:${LD_LIBRARY_PATH:-}"; \
+              exec /workspace/vllm/.venv/bin/vllm serve \
+                Qwen/Qwen3-32B \
+                --tensor-parallel-size 2 \
+                --max-num-seq 1024 \
+                --kv-transfer-config '{"kv_connector":"MooncakeStoreConnector","kv_role":"kv_both"}'
+          env:
+            - name: MOONCAKE_CONFIG_PATH
+              value: /etc/mooncake/mooncake_config.json
+            - name: PYTHONHASHSEED
+              value: "42"
+          resources:
+            limits:
+              memory: 500Gi
+            requests:
+              memory: 500Gi
+          volumeMounts:
+            - name: mooncake-config
+              mountPath: /etc/mooncake
+            - name: workspace
+              mountPath: /workspace
+      volumes:
+        - name: mooncake-config
+          configMap:
+            name: mooncake-config
+        - name: workspace
+          emptyDir: {}

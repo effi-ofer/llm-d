@@ -8,7 +8,7 @@
 
 ## Overview
 
-This guide provides recipes to offload prefix cache to CPU RAM via the vLLM native offloading connector, LMCache connector and tpu-inference KVCache connector. Offloading prefix cache to CPU helps in increasing overall throughput and mitigating memory starvation on HBM for large context models and frequent multi-turn user sessions.
+This guide provides recipes to offload prefix cache to CPU RAM via the vLLM native offloading connector, LMCache connector, Mooncake Store Connector, and tpu-inference KVCache connector. Offloading prefix cache to CPU helps in increasing overall throughput and mitigating memory starvation on HBM for large context models and frequent multi-turn user sessions.
 
 ## Default Configuration
 
@@ -114,6 +114,33 @@ export INFRA_PROVIDER=base # base | gke
 kubectl apply -n ${NAMESPACE} -k guides/tiered-prefix-cache/cpu/modelserver/gpu/vllm/${CONNECTOR}/${INFRA_PROVIDER}/
 ```
 
+<details>
+<summary><b>For NVIDIA GPU with Mooncake Store Connector</b></summary>
+
+The [Mooncake Store Connector](https://docs.vllm.ai/en/latest/features/mooncake_store_connector_usage/) pools CPU RAM across nodes into a distributed KV cache using the Mooncake transfer engine. This enables cross-node prefix cache sharing without GPU-to-GPU transfers.
+
+> [!NOTE]
+> `MooncakeStoreConnector` requires vLLM main (merged via [PR #40900](https://github.com/vllm-project/vllm/pull/40900)) and is not available in any released version as of v0.20.x. The model server pod clones vLLM from source and installs it at startup, which adds several minutes to the initial pod start time.
+
+This variant deploys:
+- The vLLM decode deployment (clones vLLM source at startup, runs as root)
+- A `mooncake-master` coordination service
+- A `mooncake-config` ConfigMap with the Mooncake connection settings
+
+**On OpenShift**, the pod runs as root to install packages at startup. Grant `anyuid` SCC to the model server service account first:
+
+```bash
+oc adm policy add-scc-to-user anyuid -z gpu-vllm-sa -n ${NAMESPACE}
+```
+
+Deploy:
+
+```bash
+kubectl apply -n ${NAMESPACE} -k guides/tiered-prefix-cache/cpu/modelserver/gpu/vllm/mooncake/base/
+```
+
+</details>
+
 **For Google TPU v7:**
 ```bash
 kubectl apply -n ${NAMESPACE} -k guides/tiered-prefix-cache/cpu/modelserver/tpu-v7/vllm/tpu-offloading-connector/
@@ -185,6 +212,14 @@ To clean up the applied deployment components:
 ```bash
 helm uninstall ${GUIDE_NAME} -n ${NAMESPACE}
 kubectl delete -n ${NAMESPACE} -k guides/tiered-prefix-cache/cpu/modelserver/gpu/vllm/${CONNECTOR}/${INFRA_PROVIDER}
+kubectl delete namespace ${NAMESPACE}
+```
+
+For the Mooncake Store Connector variant:
+
+```bash
+helm uninstall ${GUIDE_NAME} -n ${NAMESPACE}
+kubectl delete -n ${NAMESPACE} -k guides/tiered-prefix-cache/cpu/modelserver/gpu/vllm/mooncake/base/
 kubectl delete namespace ${NAMESPACE}
 ```
 
