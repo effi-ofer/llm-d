@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mooncake-config
+data:
+  mooncake_config.json: |
+    {
+      "metadata_server": "P2PHANDSHAKE",
+      "master_server_address": "mooncake-master:50051",
+      "global_segment_size": "20GB",
+      "local_buffer_size": "2GB",
+      "protocol": "tcp",
+      "device_name": ""
+    }

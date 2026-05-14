@@ -129,6 +129,33 @@ export INFRA_PROVIDER=base # base | coreweave | gke
 kubectl apply -n ${NAMESPACE} -k guides/${GUIDE_NAME}/modelserver/gpu/vllm/${INFRA_PROVIDER}
 ```
 
+<details>
+<summary><b>For NVIDIA GPU with Mooncake MultiConnector</b></summary>
+
+This variant uses vLLM's `MultiConnector` combining `MooncakeConnector` (direct P2P KV transfer between prefill and decode) with `MooncakeStoreConnector` (shared CPU memory pool for cross-instance prefix cache sharing). It deploys `Qwen/Qwen3-32B` with 2 prefill replicas (TP=1) and 2 decode replicas (TP=1).
+
+> [!NOTE]
+> `MooncakeStoreConnector` requires vLLM main (merged via [PR #40900](https://github.com/vllm-project/vllm/pull/40900)) and is not available in any released version as of v0.20.x. Both prefill and decode pods clone vLLM from source at startup, which adds several minutes to initial pod readiness.
+
+This variant deploys:
+- Prefill and decode deployments (clone vLLM source at startup, run as root)
+- A `mooncake-master` coordination service (required by `MooncakeStoreConnector`)
+- A `mooncake-config` ConfigMap with connection settings
+
+**On OpenShift**, grant `anyuid` SCC to the model server service account first:
+
+```bash
+oc adm policy add-scc-to-user anyuid -z pd-disaggregation-nvidia-gpu-vllm-sa -n ${NAMESPACE}
+```
+
+Deploy:
+
+```bash
+kubectl apply -n ${NAMESPACE} -k guides/${GUIDE_NAME}/modelserver/gpu/vllm/mooncake/base/
+```
+
+</details>
+
 ### 3. Enable Monitoring (optional)
 
 > [!NOTE]
@@ -217,6 +244,13 @@ To remove the deployed components:
 ```bash
 helm uninstall ${GUIDE_NAME} -n ${NAMESPACE}
 kubectl delete -n ${NAMESPACE} -k guides/${GUIDE_NAME}/modelserver/gpu/vllm/${INFRA_PROVIDER}
+```
+
+For the Mooncake MultiConnector variant:
+
+```bash
+helm uninstall ${GUIDE_NAME} -n ${NAMESPACE}
+kubectl delete -n ${NAMESPACE} -k guides/${GUIDE_NAME}/modelserver/gpu/vllm/mooncake/base/
 ```
 
 ## Benchmarking Report
